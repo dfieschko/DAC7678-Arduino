@@ -45,7 +45,7 @@ DAC7678::DAC7678(TwoWire &wire)
 /**
  * @brief Construct a new DAC7678 object a specified address and a TwoWire object.
  * 
- * @param adress Node address of DAC7678 to communicate with.
+ * @param address Node address of DAC7678 to communicate with.
  * @param wire TwoWire object to use for communication.
  */
 DAC7678::DAC7678(uint8_t address, TwoWire &wire)
@@ -59,7 +59,7 @@ DAC7678::DAC7678(uint8_t address, TwoWire &wire)
  * @brief Choose the address of the DAC7678 chip you're communicating with.
  *        Does NOT check for address validity - use isValidAddress() for that
  * 
- * @param address I2C node address of chip
+ * @param addr I2C node address of chip
  */
 void DAC7678::setAddress(uint8_t addr)
 {
@@ -110,11 +110,17 @@ void DAC7678::chooseUpdateMode(UpdateMode mode)
 void DAC7678::write(uint8_t command, uint16_t data)
 {
     wire->beginTransmission(address);   // transmit to DAC7678 node address
-    wire->write((uint8_t) command);     // transmit command byte
-    wire->write((uint16_t) data);       // transmit data bytes
-    wire->endTransmission();            // end transmission
+    wire->write(command);    // transmit command byte
+    wire->write(data, 2);    // transmit data (2 bytes)
+    wire->endTransmission(); // end transmission
 }
 
+/**
+ * @brief Performs an I2C read sequence (see page 30, 'DAC7678 I2C READ SEQUENCE' in datasheet).
+ * 
+ * @param command 
+ * @return uint16_t data read from DAC7678 chip
+ */
 uint16_t DAC7678::read(uint8_t command)
 { // See 'DAC7678 I2C READ SEQUENCE' in datasheet (page 30) for more info
     uint16_t data = 0;
@@ -137,7 +143,19 @@ uint16_t DAC7678::read(uint8_t command)
  * @param chan DAC Channel to write to 
  * @param value Value to write to DAC channel
  */
-void DAC7678::setDAC(Channel chan, uint16_t value)
+void DAC7678::set(int chan, uint16_t value)
+{
+    return setDAC(chan, value);
+}
+
+/**
+ * @brief Writes to a Channel's input register and updates (or doesn't update) channels based on which UpdateMode
+ *        has been chosen via chooseUpdateMode() (defaults to UPDATE_ONE if you haven't called chooseUpdateMode())
+ * 
+ * @param chan DAC Channel to write to 
+ * @param value Value to write to DAC channel
+ */
+void DAC7678::setDAC(int chan, uint16_t value)
 {
     switch(update_mode)
     {
@@ -162,7 +180,7 @@ void DAC7678::setDAC(Channel chan, uint16_t value)
  * @param chan Channel whose input register we want to write to
  * @param value Value to write to input register. 12-bit value - the 4 most significant bits aren't used!
  */
-void DAC7678::setWithoutUpdating(Channel chan, uint16_t value)
+void DAC7678::setWithoutUpdating(int chan, uint16_t value)
 {   
     writeToChannel(DAC7678_WRITE_CHANNEL, chan, value);
 }
@@ -172,9 +190,9 @@ void DAC7678::setWithoutUpdating(Channel chan, uint16_t value)
  * 
  * @param chan Channel to update
  */
-void DAC7678::update(Channel chan)
+void DAC7678::update(int chan)
 {
-    writeToChannel(DAC7678_UPDATE_CHANNEL, chan);
+    writeToChannel(DAC7678_UPDATE_CHANNEL, chan, 0xFFFF);
 }
 
 /**
@@ -184,7 +202,7 @@ void DAC7678::update(Channel chan)
  * @param chan Channel whose input register we want to write to
  * @param value Value to write to input register. 12-bit value - the 4 most significant bits aren't used!
  */
-void DAC7678::setAndUpdateAll(Channel chan, uint16_t value)
+void DAC7678::setAndUpdateAll(int chan, uint16_t value)
 {
     writeToChannel(DAC7678_WRITE_CH_UPDATE_CH, chan, value);
 }
@@ -196,7 +214,7 @@ void DAC7678::setAndUpdateAll(Channel chan, uint16_t value)
  * @param chan Channel whose input register we want to write to
  * @param value Value to write to input register. 12-bit value - the 4 most significant bits aren't used!
  */
-void DAC7678::setAndUpdate(Channel chan, uint16_t value)
+void DAC7678::setAndUpdate(int chan, uint16_t value)
 {
     writeToChannel(DAC7678_WRITE_CH_UPDATE_CH, chan, value);
 }
@@ -210,14 +228,14 @@ void DAC7678::setAndUpdate(Channel chan, uint16_t value)
  * @param chan Which channel to write to and/or update.
  * @param value Value to set the register to. Defaults to 0xFFFF for update()
  */
-void DAC7678::writeToChannel(uint8_t command, Channel chan, uint16_t value = 0xFFFF)
+void DAC7678::writeToChannel(uint8_t command, int chan, uint16_t value = 0xFFFF)
 {
     if(chan == NONE) // leave if chan is invalid
         return;
     // See Table 17 in datasheet for why the command and data bytes are structured this way
-    uint8_t command = 0 | (((uint8_t) command) << 4) | ((uint8_t) chan); // command byte
+    uint8_t cmd = 0 | (((uint8_t) command) << 4) | ((uint8_t) chan); // command byte
     uint16_t data = 0 | (value << 4);   // data bytes - shifted 4 bits - the first 4 bits are lost!
-    write(command, data);
+    write(cmd, data);
 }
 
 /**
@@ -320,7 +338,7 @@ void DAC7678::setToStaticMode()
  * @param chan Channel to read from
  * @return uint16_t - value read from input register
  */
-uint16_t DAC7678::readChannelInput(Channel chan)
+uint16_t DAC7678::readChannelInput(int chan)
 {
     uint8_t command = ((uint8_t) DAC7678_WRITE_CHANNEL) << 4 | (uint8_t) chan;
     uint16_t data = read(command) >> 4;
@@ -333,7 +351,7 @@ uint16_t DAC7678::readChannelInput(Channel chan)
  * @param chan Channel to read from
  * @return uint16_t - value read from output register
  */
-uint16_t DAC7678::readChannelOutput(Channel chan)
+uint16_t DAC7678::readChannelOutput(int chan)
 {
     uint8_t command = ((uint8_t) DAC7678_UPDATE_CHANNEL) << 4 | (uint8_t) chan;
     uint16_t data = read(command) >> 4;
@@ -430,8 +448,8 @@ bool DAC7678::isValidAddress(uint8_t address)
  * @param chan Channel enum values - A, B, C, D, E, F, G, H, ALL, NONE
  * @return uint8_t 8-bit code that tells DAC7678 which channels to write to
  */
-uint8_t DAC7678::getChannelCode(Channel chan1, Channel chan2 = NONE, Channel chan3 = NONE, Channel chan4 = NONE, 
-                                Channel chan5 = NONE, Channel chan6 = NONE, Channel chan7 = NONE, Channel chan8 = NONE)
+uint8_t DAC7678::getChannelCode(int chan1, int chan2 = NONE, int chan3 = NONE, int chan4 = NONE, 
+                                int chan5 = NONE, int chan6 = NONE, int chan7 = NONE, int chan8 = NONE)
 {
     uint8_t code = 0b00000000;
     // Get codes for each channel argument and logical OR them together to get final code representing all channels
@@ -451,7 +469,7 @@ uint8_t DAC7678::getChannelCode(Channel chan1, Channel chan2 = NONE, Channel cha
  * @param chan Channel enum value - A, B, C, D, E, F, G, H, ALL, NONE
  * @return uint8_t 8-bit code that tells DAC7678 which channels to write to
  */
-uint8_t DAC7678::chanCode(Channel chan)
+uint8_t DAC7678::chanCode(int chan)
 {
     switch(chan)
     {
